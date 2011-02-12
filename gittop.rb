@@ -44,28 +44,6 @@ class Node
         return self
     end
 
-=begin
-    def self.collapse
-        return @sources.map{|node| node.collapse}.flatten
-    end
-    def collapse(base = nil, count = 1)
-        if @nexts.length == 1 and @prevs.length <= 1
-            (@nexts[0]).collapse(base, count+1)
-        else
-            if base == nil
-                newbase = `echo '#{count} commits #{@notes.join(', ')}' | git commit-tree #{@sha}^{tree}`.strip
-            else
-                newbase = `echo '#{count} commits #{@notes.join(', ')}' | git commit-tree #{@sha}^{tree} -p #{base}`.strip
-            end
-            if @nexts.length == 0
-                return [newbase]
-            else
-                return @nexts.map{|node| node.collapse(newbase)}.flatten
-            end
-        end
-    end
-=end
-
     def collapse(force = false)
         if @lazy == nil
             @lazy = self.collaps(force)
@@ -74,26 +52,22 @@ class Node
     end
     def collaps(force = false)
         if @prevs.length > 1
-            puts "echo 'Merge commit #{@notes.join(', ')}' | git commit-tree #{@sha}^{tree} #{self.collapse_helper(true)}"
             return {'count' => 0, 'sha' => `echo 'Merge commit #{@notes.join(', ')}' | git commit-tree #{@sha}^{tree} #{self.collapse_helper(true)}`.strip}
+        elsif @prevs.length == 0 #Root commit
+            return {'count' => 0, 'sha' => `echo 'Root commit #{@notes.join(', ')}' | git commit-tree #{@sha}^{tree} #{self.collapse_helper(true)}`.strip}
         end
         if @nexts.length == 1
             #puts @sha
             #puts YAML::dump self
-            if @prevs.length == 0 # root commit (base case)
-                return {'count' => 1, 'sha' => nil }
-            elsif @prevs.length == 1 and @notes.length == 0 and not force
+            if @prevs.length == 1 and @notes.length == 0 and not force
                 collapsedparent = @prevs[0].collapse
                 return {'count' => collapsedparent['count']+1, 'sha' => collapsedparent['sha']}
             end
         end
-        return {'count' => 1, 'sha' => `echo '#{@prevs[0].collapse['count']} commits #{@notes.join(', ')}' | git commit-tree #{@sha}^{tree} #{self.collapse_helper}`.strip}
+        return {'count' => 0, 'sha' => `echo '#{@prevs[0].collapse['count']+1} commits #{@notes.join(', ')}' | git commit-tree #{@sha}^{tree} #{self.collapse_helper}`.strip}
     end
     def collapse_helper(force = false)
-        return @prevs.map do |node|
-            sha = node.collapse(force)['sha']
-            return sha ? "-p #{sha}" : ""
-        end.join(' ')
+        return @prevs.map{|node| "-p #{node.collapse(force)['sha']}"}.join(' ')
     end
 
     def self.graph(branches = nil)
@@ -104,7 +78,7 @@ class Node
             Node.fromsha(`git rev-parse #{branch.strip}`.strip).addnote(branch.strip)
         end
         Node.explore
-        puts `git log --color=always --pretty=format:'%s' --graph #{headnodes.map{|node| node.collapse(true)['sha']}.join(' ')}`
+        puts `git log --pretty=format:'%s' --graph #{headnodes.map{|node| node.collapse(true)['sha']}.join(' ')}`
     end
 end
 
